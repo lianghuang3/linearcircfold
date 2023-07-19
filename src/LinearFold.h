@@ -119,6 +119,7 @@ public:
     double b = -0.6;
     bool is_fasta = false;
     int dangle_model;
+    bool is_circular = false;
 
     struct DecoderResult {
         std::string structure;
@@ -135,13 +136,14 @@ public:
                   float zuker_energy_delta=5.0,
                   std::string shape_file_path="",
                   bool is_fasta=false,
-                  int dangle_model=2); // lisiz, add constraints
+                  int dangle_model=2,
+                  bool is_circular=false); // lisiz, add constraints
 
     DecoderResult parse(std::string& seq, std::vector<int>* cons);
     void outside(std::vector<int> next_pair[]); //for zuker subopt
 
 private:
-    void get_parentheses(char* result, std::string& seq);
+    void get_parentheses(char* result, std::string& seq, int l, int r, int len);
 
     std::pair<std::string, std::string> get_parentheses_outside_real_backtrace(int i, int j, State& state_beta, std::map<std::tuple<BestTypes, int, int>, std::pair<std::string, std::string> >& global_visited_outside, std::map<std::tuple<BestTypes, int, int>, std::string>& global_visited_inside, std::set<std::pair<int,int> >& window_visited);
     std::string get_parentheses_inside_real_backtrace(int i, int j, State& state, std::map<std::tuple<BestTypes, int, int>, std::string>& global_visited_inside, std::set<std::pair<int,int> >& window_visited);

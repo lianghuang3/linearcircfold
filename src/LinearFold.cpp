@@ -46,12 +46,14 @@ using namespace std;
     }
 #endif
 
-void BeamCKYParser::get_parentheses(char* result, string& seq) {
-    memset(result, '.', seq_length);
-    result[seq_length] = 0;
+void BeamCKYParser::get_parentheses(char* result, string& seq, int l, int r, int len) {
+    int n = is_circular ? seq_length / 2 : seq_length;
+    memset(result, '.', len);
+    result[len] = 0;
 
     stack<tuple<int, int, State>> stk;
-    stk.push(make_tuple(0, seq_length-1, bestC[seq_length-1]));
+    if (is_circular) stk.push(make_tuple(l, r, bestP[r][l]));
+    else stk.push(make_tuple(l, r, bestC[r]));
 
     if(is_verbose){
             printf(">verbose\n");
@@ -91,7 +93,7 @@ void BeamCKYParser::get_parentheses(char* result, string& seq) {
                         int nucj_1 = (j - 1) > -1 ? nucs[j - 1] : -1;
 
                         value_type newscore = - v_score_hairpin(i, j, nuci, nuci1, nucj_1, nucj, tetra_hex_tri);
-                        printf("Hairpin loop ( %d, %d) %c%c : %.2f\n", i+1, j+1, seq[i], seq[j], newscore / -100.0);
+                        printf("Hairpin loop ( %d, %d) %c%c : %.2f\n", (i+1)%n, (j+1)%n, seq[i], seq[j], newscore / -100.0);
                         total_energy += newscore;
                     }
                 }
@@ -109,7 +111,7 @@ void BeamCKYParser::get_parentheses(char* result, string& seq) {
 
                         value_type newscore = -v_score_single(i,j,p,q, nuci, nuci1, nucj_1, nucj,
                                                           nucp_1, nucp, nucq, nucq1);
-                        printf("Interior loop ( %d, %d) %c%c; ( %d, %d) %c%c : %.2f\n", i+1, j+1, seq[i], seq[j], p+1, q+1, seq[p],seq[q], newscore / -100.0);
+                        printf("Interior loop ( %d, %d) %c%c; ( %d, %d) %c%c : %.2f\n", (i+1)%n, (j+1)%n, seq[i], seq[j], p+1, q+1, seq[p],seq[q], newscore / -100.0);
                         total_energy += newscore;
                     }
                 }
@@ -127,7 +129,7 @@ void BeamCKYParser::get_parentheses(char* result, string& seq) {
 
                         value_type newscore = -v_score_single(i,j,p,q, nuci, nuci1, nucj_1, nucj,
                                                           nucp_1, nucp, nucq, nucq1);
-                        printf("Interior loop ( %d, %d) %c%c; ( %d, %d) %c%c : %.2f\n", i+1, j+1, seq[i], seq[j], p+1, q+1, seq[p],seq[q], newscore / -100.0);
+                        printf("Interior loop ( %d, %d) %c%c; ( %d, %d) %c%c : %.2f\n", (i+1)%n, (j+1)%n, seq[i], seq[j], p+1, q+1, seq[p],seq[q], newscore / -100.0);
                         total_energy += newscore;
                     }
                 }
@@ -203,7 +205,7 @@ void BeamCKYParser::get_parentheses(char* result, string& seq) {
                     printf("so is the leftmost (50-end) unpaired segment of a multiloop (new constraint).\n");
                     exit(1);
                 } 
-                printf("wrong manner at %d, %d: manner %d\n", i, j, state.manner); fflush(stdout);
+                printf("wrong manner at %d, %d: manner %d\n", i%n, j%n, state.manner); fflush(stdout);
                 assert(false);
                 
         }
@@ -229,7 +231,7 @@ void BeamCKYParser::get_parentheses(char* result, string& seq) {
             }
             multi_energy += - v_score_multi_unpaired(1, num_unpaired);
 
-            printf("Multi loop ( %d, %d) %c%c : %.2f\n", i+1, j+1, seq[i], seq[j], multi_energy / -100.0);
+            printf("Multi loop ( %d, %d) %c%c : %.2f\n", (i+1)%n, (j+1)%n, seq[i], seq[j], multi_energy / -100.0);
             total_energy += multi_energy;
         }
 
@@ -793,7 +795,11 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
     unsigned long nos_H = 0, nos_P = 0, nos_M2 = 0,
             nos_M = 0, nos_C = 0, nos_Multi = 0;
     gettimeofday(&parse_starttime, NULL);
-    prepare(static_cast<unsigned>(seq.length()));
+    // if circular -> x = x + x
+    if (is_circular) {
+        prepare(static_cast<unsigned>(2 * seq.length()));
+        seq = seq + seq;
+    } else prepare(static_cast<unsigned>(seq.length())); 
 
     for (int i = 0; i < seq_length; ++i)
         nucs[i] = GET_ACGU_NUM(seq[i]);
@@ -1445,9 +1451,68 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
     }  // end of for-loo j
 
     State& viterbi = bestC[seq_length-1];
+    char result[is_circular ? seq_length / 2 + 1 : seq_length + 1];
 
-    char result[seq_length+1];
-    get_parentheses(result, seq);
+    bool valid = true; //manner != MANNER_NONE && mx > 0
+    if (is_circular) {
+        int n = seq_length / 2;
+        value_type mx = 0;
+        pair<int, int> bst = {-1, -1};
+        for (int j = 1; j < n; j++) {
+            for (auto p : bestP[j]) {
+                int i = p.first; 
+                State ins = p.second; 
+                State out = bestP[n + i][j];
+                if (ins.manner == MANNER_NONE || out.manner == MANNER_NONE) continue;
+                if (ins.score + out.score > mx) {
+                    mx = ins.score + out.score;
+                    bst = {i, j};
+                }
+            }
+        }
+        viterbi = State(mx, MANNER_NONE);
+        int i = bst.first; 
+        int j = bst.second;
+        if (i == -1) valid = false;
+        // printf("i: %d j: %d mx: %d\n", i, j, mx);
+        char tmp[seq_length + 1]; //outside
+        if (valid) {
+            get_parentheses(tmp, seq, j, n + i, seq_length);
+            get_parentheses(result, seq, i, j, n);
+        }
+        //move n -> n + i - 1 to front
+        int lf = 0; 
+        for (int k = n; k < n + i; k++) {
+            if (tmp[k] == '(') {
+                result[k - n] = '(';
+                lf++;
+            } else if (tmp[k] == ')') {
+                if (!lf) result[k - n] = '(';
+                else {
+                    result[k - n] = ')';
+                    lf--;
+                }
+            }
+        }
+        //fix unpaired left parens
+        int rt = 0; 
+        for (int k = n - 1; k > j; k--) {
+            if (tmp[k] == ')') {
+                result[k] = ')';
+                rt++;
+            } else if (tmp[k] == '(') {
+                if (!rt) result[k] = ')';
+                else {
+                    result[k] = '(';
+                    rt--;
+                }
+            }
+        }
+        if (!valid) {
+            memset(result, '.', n);
+            result[n] = 0;
+        }
+    } else get_parentheses(result, seq, 0, seq_length-1, seq_length);
 
     gettimeofday(&parse_endtime, NULL);
     double parse_elapsed_time = parse_endtime.tv_sec - parse_starttime.tv_sec + (parse_endtime.tv_usec-parse_starttime.tv_usec)/1000000.0;
@@ -1877,7 +1942,8 @@ BeamCKYParser::BeamCKYParser(int beam_size,
                              float energy_delta,
                              string shape_file_path,
                              bool fasta,
-                             int dangles)
+                             int dangles,
+                             bool circ)
     : beam(beam_size), 
       no_sharp_turn(nosharpturn), 
       is_verbose(verbose),
@@ -1885,7 +1951,8 @@ BeamCKYParser::BeamCKYParser(int beam_size,
       zuker(zuker_subopt),
       zuker_energy_delta(energy_delta),
       is_fasta(fasta),
-      dangle_model(dangles){
+      dangle_model(dangles),
+      is_circular(circ) {
 #ifdef lv
         initialize();
 #else
@@ -1957,6 +2024,7 @@ int main(int argc, char** argv){
     string shape_file_path = "";
     bool fasta = false;
     int dangles = 2;
+    bool is_circular = false;
 
     if (argc > 1) {
         beamsize = atoi(argv[1]);
@@ -1969,6 +2037,7 @@ int main(int argc, char** argv){
         shape_file_path = argv[8];
         fasta = atoi(argv[9]) == 1;
         dangles = atoi(argv[10]);
+        is_circular = atoi(argv[11]) == 1;
     }
 
     if (is_constraints && zuker_subopt){
@@ -2122,7 +2191,7 @@ int main(int argc, char** argv){
                         printf("%s\n", constr.c_str());
                         
                         // lhuang: moved inside loop, fixing an obscure but crucial bug in initialization
-                        BeamCKYParser parser(beamsize, !sharpturn, is_verbose, is_constraints, false, 5.0, "", false, dangles);
+                        BeamCKYParser parser(beamsize, !sharpturn, is_verbose, is_constraints, false, 5.0, "", false, dangles, is_circular);
 
                         BeamCKYParser::DecoderResult result = parser.parse(seq, &cons);
 
@@ -2186,7 +2255,7 @@ int main(int argc, char** argv){
                 replace(rna_seq.begin(), rna_seq.end(), 'T', 'U');
 
                 // lhuang: moved inside loop, fixing an obscure but crucial bug in initialization
-                BeamCKYParser parser(beamsize, !sharpturn, is_verbose, false, zuker_subopt, energy_delta, shape_file_path, fasta, dangles);
+                BeamCKYParser parser(beamsize, !sharpturn, is_verbose, false, zuker_subopt, energy_delta, shape_file_path, fasta, dangles, is_circular);
 
                 BeamCKYParser::DecoderResult result = parser.parse(rna_seq, NULL);
 
