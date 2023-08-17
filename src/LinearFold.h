@@ -143,7 +143,7 @@ public:
     void outside(std::vector<int> next_pair[]); //for zuker subopt
 
 private:
-    void get_parentheses(char* result, std::string& seq, int l, int r, int len);
+    void get_parentheses(char* result, std::string& seq, int l, int r, State init);
 
     std::pair<std::string, std::string> get_parentheses_outside_real_backtrace(int i, int j, State& state_beta, std::map<std::tuple<BestTypes, int, int>, std::pair<std::string, std::string> >& global_visited_outside, std::map<std::tuple<BestTypes, int, int>, std::string>& global_visited_inside, std::set<std::pair<int,int> >& window_visited);
     std::string get_parentheses_inside_real_backtrace(int i, int j, State& state, std::map<std::tuple<BestTypes, int, int>, std::string>& global_visited_inside, std::set<std::pair<int,int> >& window_visited);

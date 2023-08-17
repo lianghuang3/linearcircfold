@@ -46,14 +46,9 @@ using namespace std;
     }
 #endif
 
-void BeamCKYParser::get_parentheses(char* result, string& seq, int l, int r, int len) {
-    int n = is_circular ? seq_length / 2 : seq_length;
-    memset(result, '.', len);
-    result[len] = 0;
-
+void BeamCKYParser::get_parentheses(char* result, string& seq, int l, int r, State init) {
     stack<tuple<int, int, State>> stk;
-    if (is_circular) stk.push(make_tuple(l, r, bestP[r][l]));
-    else stk.push(make_tuple(l, r, bestC[r]));
+    stk.push(make_tuple(l, r, init));
 
     if(is_verbose){
             printf(">verbose\n");
@@ -93,7 +88,7 @@ void BeamCKYParser::get_parentheses(char* result, string& seq, int l, int r, int
                         int nucj_1 = (j - 1) > -1 ? nucs[j - 1] : -1;
 
                         value_type newscore = - v_score_hairpin(i, j, nuci, nuci1, nucj_1, nucj, tetra_hex_tri);
-                        printf("Hairpin loop ( %d, %d) %c%c : %.2f\n", (i+1)%n, (j+1)%n, seq[i], seq[j], newscore / -100.0);
+                        printf("Hairpin loop ( %d, %d) %c%c : %.2f\n", (i+1), (j+1), seq[i], seq[j], newscore / -100.0);
                         total_energy += newscore;
                     }
                 }
@@ -111,7 +106,7 @@ void BeamCKYParser::get_parentheses(char* result, string& seq, int l, int r, int
 
                         value_type newscore = -v_score_single(i,j,p,q, nuci, nuci1, nucj_1, nucj,
                                                           nucp_1, nucp, nucq, nucq1);
-                        printf("Interior loop ( %d, %d) %c%c; ( %d, %d) %c%c : %.2f\n", (i+1)%n, (j+1)%n, seq[i], seq[j], p+1, q+1, seq[p],seq[q], newscore / -100.0);
+                        printf("Interior loop ( %d, %d) %c%c; ( %d, %d) %c%c : %.2f\n", (i+1), (j+1), seq[i], seq[j], p+1, q+1, seq[p],seq[q], newscore / -100.0);
                         total_energy += newscore;
                     }
                 }
@@ -129,7 +124,7 @@ void BeamCKYParser::get_parentheses(char* result, string& seq, int l, int r, int
 
                         value_type newscore = -v_score_single(i,j,p,q, nuci, nuci1, nucj_1, nucj,
                                                           nucp_1, nucp, nucq, nucq1);
-                        printf("Interior loop ( %d, %d) %c%c; ( %d, %d) %c%c : %.2f\n", (i+1)%n, (j+1)%n, seq[i], seq[j], p+1, q+1, seq[p],seq[q], newscore / -100.0);
+                        printf("Interior loop ( %d, %d) %c%c; ( %d, %d) %c%c : %.2f\n", (i+1), (j+1), seq[i], seq[j], p+1, q+1, seq[p],seq[q], newscore / -100.0);
                         total_energy += newscore;
                     }
                 }
@@ -205,7 +200,7 @@ void BeamCKYParser::get_parentheses(char* result, string& seq, int l, int r, int
                     printf("so is the leftmost (50-end) unpaired segment of a multiloop (new constraint).\n");
                     exit(1);
                 } 
-                printf("wrong manner at %d, %d: manner %d\n", i%n, j%n, state.manner); fflush(stdout);
+                printf("wrong manner at %d, %d: manner %d\n", i, j, state.manner); fflush(stdout);
                 assert(false);
                 
         }
@@ -231,7 +226,7 @@ void BeamCKYParser::get_parentheses(char* result, string& seq, int l, int r, int
             }
             multi_energy += - v_score_multi_unpaired(1, num_unpaired);
 
-            printf("Multi loop ( %d, %d) %c%c : %.2f\n", (i+1)%n, (j+1)%n, seq[i], seq[j], multi_energy / -100.0);
+            printf("Multi loop ( %d, %d) %c%c : %.2f\n", (i+1), (j+1), seq[i], seq[j], multi_energy / -100.0);
             total_energy += multi_energy;
         }
 
@@ -796,10 +791,7 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
             nos_M = 0, nos_C = 0, nos_Multi = 0;
     gettimeofday(&parse_starttime, NULL);
     // if circular -> x = x + x
-    if (is_circular) {
-        prepare(static_cast<unsigned>(2 * seq.length()));
-        seq = seq + seq;
-    } else prepare(static_cast<unsigned>(seq.length())); 
+    prepare(static_cast<unsigned>(seq.length())); 
 
     for (int i = 0; i < seq_length; ++i)
         nucs[i] = GET_ACGU_NUM(seq[i]);
@@ -1004,11 +996,11 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
                 State& state = item.second;
                 int nuci = nucs[i];
                 int nuci1 = nucs[i+1];
-                int jnext = next_pair[nuci][j];
+                int jnext = is_circular ? (j + 1 < seq_length ? j + 1 : -1) : next_pair[nuci][j];
 
                 // 2. generate P (i, j)
                 // lisiz, change the order because of the constraits
-                {
+                if (!is_circular || _allowed_pairs[nuci][nucs[j]]) {
                     value_type newscore;
 #ifdef lv
                         newscore = state.score - v_score_multi(i, j, nuci, nuci1, nucs[j-1], nucj, seq_length, dangle_model);
@@ -1359,7 +1351,7 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
                 {
                     for (int p = i-1; p >= std::max(i - SINGLE_MAX_LEN, 0); --p) {
                         int nucp = nucs[p];
-                        int q = next_pair[nucp][j];
+                        int q = is_circular ? (j + 1) % seq_length : next_pair[nucp][j];
 
                         if (use_constraints){
                             if (p < i - 1 && !allow_unpaired_position[p+1])
@@ -1451,68 +1443,162 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
     }  // end of for-loo j
 
     State& viterbi = bestC[seq_length-1];
-    char result[is_circular ? seq_length / 2 + 1 : seq_length + 1];
+    char result[seq_length + 1];
+    memset(result, '.', seq_length);
+    result[seq_length] = 0;
 
-    bool valid = true; //manner != MANNER_NONE && mx > 0
     if (is_circular) {
-        int n = seq_length / 2;
-        value_type mx = 0;
-        pair<int, int> bst = {-1, -1};
-        for (int j = 1; j < n; j++) {
+        //hairpin
+        pair<value_type, pair<int, int>> h_cand {0, {-1, -1}};
+        for (int j = 1; j < seq_length; j++) {
             for (auto p : bestP[j]) {
-                int i = p.first; 
-                State ins = p.second; 
-                State out = bestP[n + i][j];
-                if (ins.manner == MANNER_NONE || out.manner == MANNER_NONE) continue;
-                if (ins.score + out.score > mx) {
-                    mx = ins.score + out.score;
-                    bst = {i, j};
+                int i = p.first;
+                State cur = p.second;
+                value_type sc = cur.score;
+                int nuci = nucs[i], nucj = nucs[j];
+                int nucj1 = (j + 1) < seq_length ? nucs[j + 1] : nucs[0];
+                int nuci_1 = (i - 1) > -1 ? nucs[i - 1] : nucs[seq_length - 1];
+#ifdef lv
+                sc -= v_score_hairpin(j, i + seq_length, nucj, nucj1, nuci_1, nuci);
+#else
+                sc += score_hairpin(j, i + seq_length, nucj, nucj1, nuci_1, nuci);
+#endif
+                if (sc > h_cand.first) {
+                    h_cand.first = sc;
+                    h_cand.second = {i, j};
                 }
             }
         }
-        viterbi = State(mx, MANNER_NONE);
-        int i = bst.first; 
-        int j = bst.second;
-        if (i == -1) valid = false;
-        // printf("i: %d j: %d mx: %d\n", i, j, mx);
-        char tmp[seq_length + 1]; //outside
-        if (valid) {
-            get_parentheses(tmp, seq, j, n + i, seq_length);
-            get_parentheses(result, seq, i, j, n);
-        }
-        //move n -> n + i - 1 to front
-        int lf = 0; 
-        for (int k = n; k < n + i; k++) {
-            if (tmp[k] == '(') {
-                result[k - n] = '(';
-                lf++;
-            } else if (tmp[k] == ')') {
-                if (!lf) result[k - n] = '(';
-                else {
-                    result[k - n] = ')';
-                    lf--;
+        //interior
+        int bound = 30;
+        pair<value_type, vector<int>> i_cand {0, {-1, -1, -1, -1}};
+        for (int q = seq_length - 1; q >= max((uint) 3, seq_length - 1 - bound); q--) {
+            int l1 = seq_length - 1 - q;
+            for (auto p1 : bestP[q]) {
+                int p = p1.first;
+                value_type sc1 = p1.second.score;
+                for (int l = p - 1; l >= max(1, p - 1 - bound + l1); l--) {
+                    int l2 = p - l - 1;
+                    for (auto p2 : bestP[l]) {
+                        int k = p2.first;
+                        if (k > bound - l1 - l2) continue;
+                        value_type sc2 = p2.second.score;
+                        value_type sc = sc1 + sc2;
+                        int nucq = nucs[q], nucp = nucs[p];
+                        int nuck = nucs[k], nucl = nucs[l];
+                        int nucq1 = (q + 1) < seq_length ? nucs[q + 1] : nucs[0];
+                        int nucp_1 = (p - 1) > -1 ? nucs[p - 1] : nucs[seq_length - 1];
+                        int nucl1 = (l + 1) < seq_length ? nucs[l + 1] : nucs[0];
+                        int nuck_1 = (k - 1) > -1 ? nucs[k - 1] : nucs[seq_length - 1];
+#ifdef lv
+                        sc -= v_score_single(q, seq_length + p, seq_length + k, seq_length + l,
+                                            nucq, nucq1, nucp_1, nucp, nuck_1, nuck, nucl, nucl1);
+#else
+                        sc += score_single(q, seq_length + p, seq_length + k, seq_length + l, -1,
+                                            nucq, nucq1, nucp_1, nucp, nuck_1, nuck, nucl, nucl1);
+#endif
+                        if (sc > i_cand.first) {
+                            i_cand.first = sc;
+                            i_cand.second = {q, p, l, k};
+                        }
+                    }
                 }
             }
         }
-        //fix unpaired left parens
-        int rt = 0; 
-        for (int k = n - 1; k > j; k--) {
-            if (tmp[k] == ')') {
-                result[k] = ')';
-                rt++;
-            } else if (tmp[k] == '(') {
-                if (!rt) result[k] = ')';
-                else {
-                    result[k] = '(';
-                    rt--;
-                }
+        //multi
+        pair<value_type, int> m_cand {0, -1};
+        for (auto p : bestM[seq_length - 1]) {
+            int j = p.first;
+            if (j < 1) continue;
+            State mult = bestMulti[j - 1][0];
+            if (mult.manner == MANNER_NONE) continue;
+            value_type sc = p.second.score + mult.score - ML_closing37;
+            if (sc > m_cand.first) m_cand = {sc, j};
+        }
+        if (h_cand.first > 0 || i_cand.first > 0 || m_cand.first > 0) {
+            value_type top = max(h_cand.first, max(i_cand.first, m_cand.first));
+            if (top == h_cand.first) {
+                int i = h_cand.second.first;
+                int j = h_cand.second.second;
+                cout << "HAIRPIN! " << h_cand.first << " " << i << " " << j << endl;
+                get_parentheses(result, seq, i, j, bestP[j][i]);
+                viterbi = State(h_cand.first, MANNER_NONE);
+            } else if (top == i_cand.first) {
+                cout << "INTERIOR!" << i_cand.first << endl;
+                vector<int> v = i_cand.second;
+                get_parentheses(result, seq, v[1], v[0], bestP[v[0]][v[1]]);
+                get_parentheses(result, seq, v[3], v[2], bestP[v[2]][v[3]]);
+                viterbi = State(i_cand.first, MANNER_NONE);
+            } else {
+                cout << "MULTI!" << m_cand.first << endl;
+                int j = m_cand.second;
+                get_parentheses(result, seq, 0, j - 1, bestMulti[j - 1][0]);
+                get_parentheses(result, seq, j, seq_length - 1, bestM[seq_length - 1][j]);
+                viterbi = State(m_cand.first, MANNER_NONE);
             }
-        }
-        if (!valid) {
-            memset(result, '.', n);
-            result[n] = 0;
-        }
-    } else get_parentheses(result, seq, 0, seq_length-1, seq_length);
+        } else viterbi = State(0, MANNER_NONE);
+    } else get_parentheses(result, seq, 0, seq_length - 1, bestC[seq_length - 1]);
+
+    // bool valid = true; //manner != MANNER_NONE && mx > 0
+    // if (is_circular) {
+    //     int n = seq_length / 2;
+    //     value_type mx = 0;
+    //     pair<int, int> bst = {-1, -1};
+    //     for (int j = 1; j < n; j++) {
+    //         for (auto p : bestP[j]) {
+    //             int i = p.first; 
+    //             State ins = p.second; 
+    //             State out = bestP[n + i][j];
+    //             if (ins.manner == MANNER_NONE || out.manner == MANNER_NONE) continue;
+    //             if (ins.score + out.score > mx) {
+    //                 mx = ins.score + out.score;
+    //                 bst = {i, j};
+    //             }
+    //         }
+    //     }
+    //     viterbi = State(mx, MANNER_NONE);
+    //     int i = bst.first; 
+    //     int j = bst.second;
+    //     if (i == -1) valid = false;
+    //     // printf("i: %d j: %d mx: %d\n", i, j, mx);
+    //     char tmp[seq_length + 1]; //outside
+    //     if (valid) {
+    //         get_parentheses(tmp, seq, j, n + i, seq_length);
+    //         get_parentheses(result, seq, i, j, n);
+    //     }
+    //     //move n -> n + i - 1 to front
+    //     int lf = 0; 
+    //     for (int k = n; k < n + i; k++) {
+    //         if (tmp[k] == '(') {
+    //             result[k - n] = '(';
+    //             lf++;
+    //         } else if (tmp[k] == ')') {
+    //             if (!lf) result[k - n] = '(';
+    //             else {
+    //                 result[k - n] = ')';
+    //                 lf--;
+    //             }
+    //         }
+    //     }
+    //     //fix unpaired left parens
+    //     int rt = 0; 
+    //     for (int k = n - 1; k > j; k--) {
+    //         if (tmp[k] == ')') {
+    //             result[k] = ')';
+    //             rt++;
+    //         } else if (tmp[k] == '(') {
+    //             if (!rt) result[k] = ')';
+    //             else {
+    //                 result[k] = '(';
+    //                 rt--;
+    //             }
+    //         }
+    //     }
+    //     if (!valid) {
+    //         memset(result, '.', n);
+    //         result[n] = 0;
+    //     }
+    // } else get_parentheses(result, seq, 0, seq_length-1, seq_length);
 
     gettimeofday(&parse_endtime, NULL);
     double parse_elapsed_time = parse_endtime.tv_sec - parse_starttime.tv_sec + (parse_endtime.tv_usec-parse_starttime.tv_usec)/1000000.0;
