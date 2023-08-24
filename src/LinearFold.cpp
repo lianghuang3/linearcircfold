@@ -796,7 +796,8 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
     gettimeofday(&parse_starttime, NULL);
     // if circular -> x = x + x
     int n = seq.length();
-    if (is_circular) seq = seq + seq.substr(0, 31);
+    int ext = 30;
+    if (is_circular) seq = seq + seq.substr(0, ext + 1);
     prepare(static_cast<unsigned>(seq.length())); 
 
     for (int i = 0; i < seq_length; ++i)
@@ -1463,7 +1464,7 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
         for (int j = 1; j < n; j++) {
             for (auto p : bestP[j]) {
                 int i = p.first;
-                if (i > 30) continue; 
+                if (i > ext) continue; 
                 State ins = p.second; 
                 State out = bestP[n + i][j];
                 if (ins.manner == MANNER_NONE || out.manner == MANNER_NONE) continue;
