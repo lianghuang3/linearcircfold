@@ -1447,8 +1447,10 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
     memset(result, '.', seq_length);
     result[seq_length] = 0;
 
+    // case on types of loop that cross (n - 1, 0)
     if (is_circular) {
-        //hairpin
+        // hairpin
+        // loop over all (i, j) pairs and take max
         pair<value_type, pair<int, int>> h_cand {0, {-1, -1}};
         for (int j = 1; j < seq_length; j++) {
             for (auto p : bestP[j]) {
@@ -1469,7 +1471,9 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
                 }
             }
         }
-        //interior
+        // interior
+        // loop over (q, p) and (k, l) and take max
+        // bound size of entire loop to 30
         int bound = 30;
         pair<value_type, vector<int>> i_cand {0, {-1, -1, -1, -1}};
         for (int q = seq_length - 1; q >= max((uint) 3, seq_length - 1 - bound); q--) {
@@ -1505,7 +1509,9 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
                 }
             }
         }
-        //multi
+        // multi
+        // loop over all M[n - 1][j] and merge with Multi[j - 1][0]
+        // ** this method does NOT WORK ** 
         pair<value_type, int> m_cand {0, -1};
         for (auto p : bestM[seq_length - 1]) {
             int j = p.first;
@@ -1515,6 +1521,7 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
             value_type sc = p.second.score + mult.score - ML_closing37;
             if (sc > m_cand.first) m_cand = {sc, j};
         }
+        // is there is some non-zero candidate backtrace
         if (h_cand.first > 0 || i_cand.first > 0 || m_cand.first > 0) {
             value_type top = max(h_cand.first, max(i_cand.first, m_cand.first));
             if (top == h_cand.first) {
@@ -1532,73 +1539,13 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
             } else {
                 cout << "MULTI!" << m_cand.first << endl;
                 int j = m_cand.second;
+                // ** this backtrace doesn't make any sense **
                 get_parentheses(result, seq, 0, j - 1, bestMulti[j - 1][0]);
                 get_parentheses(result, seq, j, seq_length - 1, bestM[seq_length - 1][j]);
                 viterbi = State(m_cand.first, MANNER_NONE);
             }
         } else viterbi = State(0, MANNER_NONE);
     } else get_parentheses(result, seq, 0, seq_length - 1, bestC[seq_length - 1]);
-
-    // bool valid = true; //manner != MANNER_NONE && mx > 0
-    // if (is_circular) {
-    //     int n = seq_length / 2;
-    //     value_type mx = 0;
-    //     pair<int, int> bst = {-1, -1};
-    //     for (int j = 1; j < n; j++) {
-    //         for (auto p : bestP[j]) {
-    //             int i = p.first; 
-    //             State ins = p.second; 
-    //             State out = bestP[n + i][j];
-    //             if (ins.manner == MANNER_NONE || out.manner == MANNER_NONE) continue;
-    //             if (ins.score + out.score > mx) {
-    //                 mx = ins.score + out.score;
-    //                 bst = {i, j};
-    //             }
-    //         }
-    //     }
-    //     viterbi = State(mx, MANNER_NONE);
-    //     int i = bst.first; 
-    //     int j = bst.second;
-    //     if (i == -1) valid = false;
-    //     // printf("i: %d j: %d mx: %d\n", i, j, mx);
-    //     char tmp[seq_length + 1]; //outside
-    //     if (valid) {
-    //         get_parentheses(tmp, seq, j, n + i, seq_length);
-    //         get_parentheses(result, seq, i, j, n);
-    //     }
-    //     //move n -> n + i - 1 to front
-    //     int lf = 0; 
-    //     for (int k = n; k < n + i; k++) {
-    //         if (tmp[k] == '(') {
-    //             result[k - n] = '(';
-    //             lf++;
-    //         } else if (tmp[k] == ')') {
-    //             if (!lf) result[k - n] = '(';
-    //             else {
-    //                 result[k - n] = ')';
-    //                 lf--;
-    //             }
-    //         }
-    //     }
-    //     //fix unpaired left parens
-    //     int rt = 0; 
-    //     for (int k = n - 1; k > j; k--) {
-    //         if (tmp[k] == ')') {
-    //             result[k] = ')';
-    //             rt++;
-    //         } else if (tmp[k] == '(') {
-    //             if (!rt) result[k] = ')';
-    //             else {
-    //                 result[k] = '(';
-    //                 rt--;
-    //             }
-    //         }
-    //     }
-    //     if (!valid) {
-    //         memset(result, '.', n);
-    //         result[n] = 0;
-    //     }
-    // } else get_parentheses(result, seq, 0, seq_length-1, seq_length);
 
     gettimeofday(&parse_endtime, NULL);
     double parse_elapsed_time = parse_endtime.tv_sec - parse_starttime.tv_sec + (parse_endtime.tv_usec-parse_starttime.tv_usec)/1000000.0;
