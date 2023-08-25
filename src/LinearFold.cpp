@@ -794,8 +794,9 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
     unsigned long nos_H = 0, nos_P = 0, nos_M2 = 0,
             nos_M = 0, nos_C = 0, nos_Multi = 0;
     gettimeofday(&parse_starttime, NULL);
-    // if circular -> x = x + x
+    // for circular get original len before padding
     int n = seq.length();
+    // number of nucs padded
     int ext = 30;
     if (is_circular) seq = seq + seq.substr(0, ext + 1);
     prepare(static_cast<unsigned>(seq.length())); 
@@ -1092,7 +1093,10 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
                 //printf(" M = P at %d\n", j); fflush(stdout);
 
                 // 3. M2 = M + P // lhuang: check j < n-1
-                int bound = is_circular ? n : seq_length - 1; //for circ
+
+                // for circular j < n : ensures that we don't allow M2 = M + P after boundary
+                // we need this constraint because we're still allowing both Multi = Multi + u && P = Multi
+                int bound = is_circular ? n : seq_length - 1; 
                 if(!use_cube_pruning && j < bound) {
                     int k = i - 1;
                     if ( k > 0 && !bestM[k].empty()) {
@@ -1162,7 +1166,8 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
                 // 1. generate new helix / single_branch
                 // new state is of shape p..i..j..q
 
-                // bound defined above for circ
+                // circ doesn't allow new pairs to build across boundary (n)
+                // this ensures that a pair that crosses (0, n - 1) must be a hairpin
                 if (i >0 && j<bound) {
                     value_type precomputed;
 #ifdef lv
@@ -1419,6 +1424,8 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
 #endif
                 int i = item.first;
                 State& state = item.second;
+                // technically M can cross b/c (M2 = M1 + P) is also restricted
+                // however to save time we don't have to extend M after the boundary
                 int bound = is_circular ? n - 1 : seq_length - 1;
                 if (j < bound) {
                     if (use_constraints && !allow_unpaired_position[j+1]) // if j+1 must be paired
@@ -1455,11 +1462,15 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
     }  // end of for-loo j
 
     State& viterbi = bestC[seq_length-1];
+
+    //we store the original sequence len for circular backtrace
     char result[is_circular ? n + 1 : seq_length + 1];
 
+    // post-process count for circular case
+    // we consider every i <= ext (30)
+    // modified rules ensure that for every bestP[j][i] the segment from (0 ... i - 1) is all dots
     if (is_circular) {
         value_type mx = 0;
-        bool valid = true; //manner != NONE & mx > 0
         pair<int, int> bst = {-1, -1};
         for (int j = 1; j < n; j++) {
             for (auto p : bestP[j]) {
@@ -1477,14 +1488,20 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
         viterbi = State(mx, MANNER_NONE);
         int i = bst.first; 
         int j = bst.second;
-        if (i == -1) valid = false;
-        // printf("i: %d j: %d mx: %d\n", i, j, mx);
-        char tmp[seq_length + 1]; //outside
+        // valid is mx > 0
+        bool valid = i == -1; 
+        // we have to do some string slicing and parentheses flipping to get final result
+        // use tmp to store bestP[n + i][j] segment (outside)
+        // use result to store bestP[j][i] segment (inside)
+        // get_parentheses takes (_, _, left, right, len of result array)
+        char tmp[seq_length + 1]; 
         if (valid) {
             get_parentheses(tmp, seq, j, n + i, seq_length);
             get_parentheses(result, seq, i, j, n);
         }
-        //move n -> n + i - 1 to front
+        // move (n, n + i - 1) to front 
+        // (0 ... n - 1)[n ... n + i - 1]
+        // may have to flip some right parens to left parens
         int lf = 0; 
         for (int k = n; k < n + i; k++) {
             if (tmp[k] == '(') {
@@ -1498,7 +1515,7 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
                 }
             }
         }
-        //fix unpaired left parens
+        // flip left parens that used to pair with right parens in [n ... n + i - 1]
         int rt = 0; 
         for (int k = n - 1; k > j; k--) {
             if (tmp[k] == ')') {
