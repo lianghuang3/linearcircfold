@@ -101,9 +101,11 @@ void BeamCKYParser::parse(string& seq) {
 
     gettimeofday(&parse_starttime, NULL);
 
-    //for circular get original len
+    // for circular get original len before padding
     int n = seq.length();
-    if (is_circular) seq = seq + seq.substr(0, 31);
+    // number of nucs padded
+    int ext = 30;
+    if (is_circular) seq = seq + seq.substr(0, ext + 1);
     prepare(static_cast<unsigned>(seq.length()));
 
     for (int i = 0; i < seq_length; ++i)
@@ -273,6 +275,9 @@ void BeamCKYParser::parse(string& seq) {
 
                 // 1. generate new helix / single_branch
                 // new state is of shape p..i..j..q
+
+                // circ doesn't allow new pairs to build across boundary (n)
+                // this ensures that a pair that crosses (0, n - 1) must be a hairpin
                 int bound = is_circular ? n : seq_length - 1;
                 if (i >0 && j<bound) {
 #ifndef lpv
@@ -332,7 +337,8 @@ void BeamCKYParser::parse(string& seq) {
 
                 // 3. M2 = M + P
                 int k = i - 1;
-                // j < n for circ constraint
+                // for circular j < n : ensures that we don't allow M2 = M + P after boundary
+                // we need this constraint because we're still allowing both Multi = Multi + u && P = Multi
                 if ( k > 0 && !bestM[k].empty() && j < n) {
 #ifdef lpv
                     newscore = - v_score_M1(i, j, j, nuci_1, nuci, nucj, nucj1, seq_length);
@@ -415,7 +421,8 @@ void BeamCKYParser::parse(string& seq) {
             for(auto& item : beamstepM) {
                 int i = item.first;
                 State& state = item.second;
-                // for circ 
+                // technically M can cross b/c (M2 = M1 + P) is also restricted
+                // however to save time we don't have to extend M after the boundary
                 int bound = is_circular ? n - 1 : seq_length - 1;
                 if (j < bound) {
 #ifdef lpv
@@ -445,12 +452,15 @@ void BeamCKYParser::parse(string& seq) {
 
     State& viterbi = bestC[seq_length-1];
 
+    // post-process count for circular case
+    // we consider every i <= ext (30)
+    // modified rules ensure that for every bestP[j][i] the segment from (0 ... i - 1) is all dots
     if (is_circular) {
         pf_type tot = 0;
         for (int j = 1; j < n; j++) {
             for (auto p : bestP[j]) {
                 int i = p.first;
-                if (i > 30) continue; 
+                if (i > ext) continue; 
                 State ins = p.second; 
                 State out = bestP[n + i][j];
                 Fast_LogPlusEquals(tot, ins.alpha + out.alpha);
