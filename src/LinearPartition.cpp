@@ -101,6 +101,9 @@ void BeamCKYParser::parse(string& seq) {
 
     gettimeofday(&parse_starttime, NULL);
 
+    //for circular get original len
+    int n = seq.length();
+    if (is_circular) seq = seq + seq.substr(0, 31);
     prepare(static_cast<unsigned>(seq.length()));
 
     for (int i = 0; i < seq_length; ++i)
@@ -270,7 +273,8 @@ void BeamCKYParser::parse(string& seq) {
 
                 // 1. generate new helix / single_branch
                 // new state is of shape p..i..j..q
-                if (i >0 && j<seq_length-1) {
+                int bound = is_circular ? n : seq_length - 1;
+                if (i >0 && j<bound) {
 #ifndef lpv
                     value_type precomputed = score_junction_B(j, i, nucj, nucj1, nuci_1, nuci);
 #endif
@@ -328,7 +332,8 @@ void BeamCKYParser::parse(string& seq) {
 
                 // 3. M2 = M + P
                 int k = i - 1;
-                if ( k > 0 && !bestM[k].empty()) {
+                // j < n for circ constraint
+                if ( k > 0 && !bestM[k].empty() && j < n) {
 #ifdef lpv
                     newscore = - v_score_M1(i, j, j, nuci_1, nuci, nucj, nucj1, seq_length);
                     pf_type m1_alpha = state.alpha + newscore/kT;
@@ -410,7 +415,9 @@ void BeamCKYParser::parse(string& seq) {
             for(auto& item : beamstepM) {
                 int i = item.first;
                 State& state = item.second;
-                if (j < seq_length-1) {
+                // for circ 
+                int bound = is_circular ? n - 1 : seq_length - 1;
+                if (j < bound) {
 #ifdef lpv
                     Fast_LogPlusEquals(bestM[j+1][i].alpha, state.alpha); 
 #else
@@ -437,6 +444,20 @@ void BeamCKYParser::parse(string& seq) {
     }  // end of for-loo j
 
     State& viterbi = bestC[seq_length-1];
+
+    if (is_circular) {
+        pf_type tot = 0;
+        for (int j = 1; j < n; j++) {
+            for (auto p : bestP[j]) {
+                int i = p.first;
+                if (i > 30) continue; 
+                State ins = p.second; 
+                State out = bestP[n + i][j];
+                Fast_LogPlusEquals(tot, ins.alpha + out.alpha);
+            }
+        }
+        viterbi.alpha = tot;
+    }
 
     gettimeofday(&parse_endtime, NULL);
     double parse_elapsed_time = parse_endtime.tv_sec - parse_starttime.tv_sec + (parse_endtime.tv_usec-parse_starttime.tv_usec)/1000000.0;
@@ -514,7 +535,8 @@ BeamCKYParser::BeamCKYParser(int beam_size,
                              float ThreshKnot_threshold,
                              string ThreshKnot_file_index,
                              string shape_file_path,
-                             bool fasta)
+                             bool fasta,
+                             bool circ)
     : beam(beam_size), 
       no_sharp_turn(nosharpturn), 
       is_verbose(verbose),
@@ -530,7 +552,8 @@ BeamCKYParser::BeamCKYParser(int beam_size,
       threshknot_(ThreshKnot),
       threshknot_threshold(ThreshKnot_threshold),
       threshknot_file_index(ThreshKnot_file_index),
-      is_fasta(fasta){
+      is_fasta(fasta),
+      is_circular(circ) {
 #ifdef lpv
         initialize();
 #else
@@ -602,6 +625,7 @@ int main(int argc, char** argv){
     bool ThreshKnot = false;
     string ThresKnot_prefix;
     bool fasta = false; 
+    bool is_circular = false;
 
     // SHAPE
     string shape_file_path = "";
@@ -624,6 +648,7 @@ int main(int argc, char** argv){
         MEA_bpseq = atoi(argv[15]) == 1;
         shape_file_path = argv[16];
         fasta = atoi(argv[17]) == 1;
+        is_circular = atoi(argv[18]) == 1;
     }
 
     if (is_verbose) printf("beam size: %d\n", beamsize);
@@ -700,7 +725,7 @@ int main(int argc, char** argv){
         replace(rna_seq.begin(), rna_seq.end(), 'T', 'U');
 
         // lhuang: moved inside loop, fixing an obscure but crucial bug in initialization
-        BeamCKYParser parser(beamsize, !sharpturn, is_verbose, bpp_file, bpp_file_index, pf_only, bpp_cutoff, forest_file, mea, MEA_gamma, MEA_file_index, MEA_bpseq, ThreshKnot, ThreshKnot_threshold, ThreshKnot_file_index, shape_file_path);
+        BeamCKYParser parser(beamsize, !sharpturn, is_verbose, bpp_file, bpp_file_index, pf_only, bpp_cutoff, forest_file, mea, MEA_gamma, MEA_file_index, MEA_bpseq, ThreshKnot, ThreshKnot_threshold, ThreshKnot_file_index, shape_file_path, fasta, is_circular);
 
         parser.parse(rna_seq);
     }
