@@ -795,11 +795,9 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
     unsigned long nos_H = 0, nos_P = 0, nos_M2 = 0,
             nos_M = 0, nos_C = 0, nos_Multi = 0;
     gettimeofday(&parse_starttime, NULL);
-    // if circular -> x = x + x
-    if (is_circular) {
-        prepare(static_cast<unsigned>(2 * seq.length()));
-        seq = seq + seq;
-    } else prepare(static_cast<unsigned>(seq.length())); 
+    // if circular double the sequence
+    if (is_circular) seq = seq + seq;
+    prepare(static_cast<unsigned>(seq.length())); 
 
     for (int i = 0; i < seq_length; ++i)
         nucs[i] = GET_ACGU_NUM(seq[i]);
@@ -1451,10 +1449,11 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
     }  // end of for-loo j
 
     State& viterbi = bestC[seq_length-1];
+    // if circular store seq_length / 2 (since we doubled original seq)
     char result[is_circular ? seq_length / 2 + 1 : seq_length + 1];
 
-    bool valid = true; //manner != MANNER_NONE && mx > 0
     if (is_circular) {
+        // get original seq length
         int n = seq_length / 2;
         value_type mx = 0;
         pair<int, int> bst = {-1, -1};
@@ -1473,14 +1472,14 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
         viterbi = State(mx, MANNER_NONE);
         int i = bst.first; 
         int j = bst.second;
-        if (i == -1) valid = false;
-        // printf("i: %d j: %d mx: %d\n", i, j, mx);
-        char tmp[seq_length + 1]; //outside
+        bool valid = i != -1;
+        char tmp[seq_length + 1]; 
+        // same logic as padded +30nt version
         if (valid) {
             get_parentheses(tmp, seq, j, n + i, seq_length);
             get_parentheses(result, seq, i, j, n);
         }
-        //move n -> n + i - 1 to front
+        // move (n, n + i - 1) to front 
         int lf = 0; 
         for (int k = n; k < n + i; k++) {
             if (tmp[k] == '(') {
@@ -1494,7 +1493,7 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
                 }
             }
         }
-        //fix unpaired left parens
+        // flip left parens that used to pair with right parens in [n ... n + i - 1]
         int rt = 0; 
         for (int k = n - 1; k > j; k--) {
             if (tmp[k] == ')') {
