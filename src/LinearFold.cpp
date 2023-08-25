@@ -1489,7 +1489,7 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
         int i = bst.first; 
         int j = bst.second;
         // valid is mx > 0
-        bool valid = i == -1; 
+        bool valid = i != -1; 
         // we have to do some string slicing and parentheses flipping to get final result
         // use tmp to store bestP[n + i][j] segment (outside)
         // use result to store bestP[j][i] segment (inside)
