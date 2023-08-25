@@ -1,5 +1,7 @@
 # LinearPartition: Linear-Time Approximation of RNA Folding Partition Function and Base Pairing Probabilities
 
+# Circular version for LinearPartition uses '-C' as opposed to '-c' for for LinearFold
+
 This repository contains the C++ source code for the LinearPartition project, the first linear-time partition function and base pair probabilities calculation algorithm/software for RNA secondary structures.
 
 [LinearPartition: linear-time approximation of RNA folding partition function and base-pairing probabilities](https://academic.oup.com/bioinformatics/article/36/Supplement_1/i258/5870487). Bioinformatics, Volume 36, Issue Supplement_1, July 2020, Pages i258–i267. ISMB 2020
