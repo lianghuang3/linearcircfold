@@ -794,7 +794,7 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
     unsigned long nos_H = 0, nos_P = 0, nos_M2 = 0,
             nos_M = 0, nos_C = 0, nos_Multi = 0;
     gettimeofday(&parse_starttime, NULL);
-    // for circular get original len before padding
+    // acheng: for circular get original len before padding
     int n = seq.length();
     // number of nucs padded
     int ext = 30;
@@ -1093,8 +1093,7 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
                 //printf(" M = P at %d\n", j); fflush(stdout);
 
                 // 3. M2 = M + P // lhuang: check j < n-1
-
-                // for circular j < n : ensures that we don't allow M2 = M + P after boundary
+                // acheng: for circular j < n : ensures that we don't allow M2 = M + P after boundary
                 // we need this constraint because we're still allowing both Multi = Multi + u && P = Multi
                 int bound = is_circular ? n : seq_length - 1; 
                 if(!use_cube_pruning && j < bound) {
@@ -1166,8 +1165,7 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
                 // 1. generate new helix / single_branch
                 // new state is of shape p..i..j..q
 
-                // circ doesn't allow new pairs to build across boundary (n)
-                // this ensures that a pair that crosses (0, n - 1) must be a hairpin
+                // acheng: circ doesn't allow new pairs to build across boundary (n)
                 if (i >0 && j<bound) {
                     value_type precomputed;
 #ifdef lv
@@ -1424,7 +1422,7 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
 #endif
                 int i = item.first;
                 State& state = item.second;
-                // technically M can cross b/c (M2 = M1 + P) is also restricted
+                // acheng: technically M can cross b/c (M2 = M1 + P) is also restricted
                 // however to save time we don't have to extend M after the boundary
                 int bound = is_circular ? n - 1 : seq_length - 1;
                 if (j < bound) {
@@ -1466,7 +1464,7 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
     //we store the original sequence len for circular backtrace
     char result[is_circular ? n + 1 : seq_length + 1];
 
-    // post-process count for circular case
+    // acheng: post-process count for circular case
     // we consider every i <= ext (30)
     // modified rules ensure that for every bestP[j][i] the segment from (0 ... i - 1) is all dots
     if (is_circular) {
@@ -1490,7 +1488,7 @@ BeamCKYParser::DecoderResult BeamCKYParser::parse(string& seq, vector<int>* cons
         int j = bst.second;
         // valid is mx > 0
         bool valid = i != -1; 
-        // we have to do some string slicing and parentheses flipping to get final result
+        // acheng: we have to do some string slicing and parentheses flipping to get final result
         // use tmp to store bestP[n + i][j] segment (outside)
         // use result to store bestP[j][i] segment (inside)
         // get_parentheses takes (_, _, left, right, len of result array)
